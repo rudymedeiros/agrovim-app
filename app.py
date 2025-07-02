@@ -1,27 +1,22 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 import mysql.connector
-from datetime import datetime
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split, TimeSeriesSplit
-from sklearn.metrics import roc_auc_score
-from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import Pipeline
-from sklearn.calibration import CalibratedClassifierCV
+from mysql.connector import Error
+import time
+from datetime import datetime, timedelta
+from sklearn.ensemble import RandomForestRegressor
 import joblib
-import matplotlib.pyplot as plt
 
 # Configuração da página
 st.set_page_config(
-    page_title="Monitoramento Inteligente de Turbinas",
+    page_title="Monitoramento Avançado de Turbinas",
     page_icon="🌪️",
     layout="wide"
 )
 
-# --- Conexão com Banco de Dados ---
+# --- Conexão com Banco de Dados (Versão Corrigida) ---
 @st.cache_resource(ttl=60)
 def get_db_connection():
     try:
@@ -31,31 +26,34 @@ def get_db_connection():
             password="Senha2025",
             database="dados_producao",
             connect_timeout=3,
-            buffered=True
+            buffered=True  # Solução para "Unread result found"
         )
+        
+        # Teste de conexão com tratamento seguro do cursor
         cursor = None
         try:
             cursor = conn.cursor()
             cursor.execute("SELECT 1")
-            cursor.fetchall()
+            cursor.fetchall()  # Garante que todos os resultados são lidos
             return conn
         finally:
             if cursor:
-                cursor.close()                
+                cursor.close()
+                
     except Exception as e:
         st.error(f"⚠️ Falha na conexão: {str(e)}")
         st.markdown("""
         **Soluções para tentar:**
-        1. Verifique se o servidor MySQL está online
-        2. Confira usuário e senha
+        1. Verifique se o servidor MySQL (34.151.221.45) está online
+        2. Confira usuário (agrovim_user) e senha
         3. Valide as regras de firewall/ACL
         4. Recarregue a página após corrigir
         """)
         return None
 
-# --- Carregar Dados com Engenharia de Features ---
+# --- Carregar Dados com Tratamento Completo ---
 @st.cache_data(ttl=300)
-def load_monitoring_data(days=90):
+def load_monitoring_data(days=30):
     conn = None
     cursor = None
     try:
@@ -67,23 +65,15 @@ def load_monitoring_data(days=90):
         query = f"""
         SELECT * FROM dados 
         WHERE TimeStamp >= NOW() - INTERVAL {days} DAY
-        ORDER BY TimeStamp ASC
+        ORDER BY TimeStamp DESC
         """
         
         cursor.execute(query)
-        columns = [col[0] for col in cursor.description]
-        data = cursor.fetchall()
+        columns = [col[0] for col in cursor.description]  # Obtém nomes das colunas
+        data = cursor.fetchall()  # Lê todos os resultados imediatamente
         
         df = pd.DataFrame(data, columns=columns)
         df['TimeStamp'] = pd.to_datetime(df['TimeStamp'])
-        
-        # Engenharia de features
-        df['hora'] = df['TimeStamp'].dt.hour
-        df['dia_semana'] = df['TimeStamp'].dt.dayofweek
-        
-        # Target binário
-        df['target'] = df['Status'].apply(lambda x: 1 if x == 'Falha' else 0)
-        
         return df
         
     except Exception as e:
@@ -95,76 +85,28 @@ def load_monitoring_data(days=90):
         if conn and conn.is_connected():
             conn.close()
 
-# --- Modelo Preditivo Aprimorado ---
-def train_advanced_model(df):
+# --- Modelo Preditivo de Falhas ---
+def train_failure_model(df):
     try:
-        # Features selecionadas
+        # Pré-processamento
+        df['hora'] = df['TimeStamp'].dt.hour
+        df['dia_semana'] = df['TimeStamp'].dt.dayofweek
+        
+        # Features e target
         features = ['Acelerometro', 'StrainGauge', 'SensorTorque', 'Anemometro', 'hora', 'dia_semana']
+        df['target'] = df['Status'].apply(lambda x: 1 if x == 'Falha' else 0)
         
-        X = df[features]
-        y = df['target']
-        
-        # Divisão temporal
-        tscv = TimeSeriesSplit(n_splits=3)
-        for train_index, test_index in tscv.split(X):
-            X_train, X_test = X.iloc[train_index], X.iloc[test_index]
-            y_train, y_test = y.iloc[train_index], y.iloc[test_index]
-        
-        # Pipeline simplificado
-        pipeline = Pipeline([
-            ('scaler', StandardScaler()),
-            ('model', RandomForestClassifier(
-                n_estimators=200,
-                max_depth=10,
-                min_samples_split=5,
-                class_weight='balanced',
-                random_state=42
-            ))
-        ])
-        
-        # Calibração de probabilidades
-        calibrated_model = CalibratedClassifierCV(pipeline, cv=3, method='isotonic')
-        calibrated_model.fit(X_train, y_train)
-        
-        # Avaliação
-        y_proba = calibrated_model.predict_proba(X_test)[:, 1]
-        roc_auc = roc_auc_score(y_test, y_proba)
-        
-        return calibrated_model, features, roc_auc
-        
+        # Treinamento
+        model = RandomForestRegressor(n_estimators=100, random_state=42)
+        model.fit(df[features], df['target'])
+        return model
     except Exception as e:
         st.error(f"Erro no treinamento: {str(e)}")
-        return None, None, None
+        return None
 
-# --- Explicação do Modelo sem SHAP ---
-def explain_model(model, features):
-    try:
-        # Acessar o modelo base dentro do CalibratedClassifierCV
-        base_model = model.base_estimator.named_steps['model']
-        
-        if hasattr(base_model, 'feature_importances_'):
-            importances = base_model.feature_importances_
-            importance_df = pd.DataFrame({
-                'Feature': features,
-                'Importance': importances
-            }).sort_values('Importance', ascending=False)
-            
-            st.subheader("📊 Fatores Mais Importantes")
-            fig = px.bar(
-                importance_df,
-                x='Importance',
-                y='Feature',
-                orientation='h',
-                title='Contribuição de Cada Variável'
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.warning("O modelo não fornece importância de características.")
-    except Exception as e:
-        st.warning(f"Não foi possível explicar o modelo: {str(e)}")
-# --- Simulador de Falhas ---
-def show_failure_simulator(model, features, roc_auc):
-    st.header("🔮 Simulador de Risco de Falhas")
+# --- Interface do Simulador de Falhas ---
+def show_failure_simulator(model):
+    st.header("🔮 Simulador de Falhas")
     
     with st.expander("Configurar Parâmetros", expanded=True):
         col1, col2 = st.columns(2)
@@ -181,15 +123,9 @@ def show_failure_simulator(model, features, roc_auc):
                                 index=0)
         dia_num = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"].index(dia_semana)
         
-        if st.button("Calcular Risco de Falha") and model:
-            input_data = pd.DataFrame([[
-                accel, strain, torque, wind, hora, dia_num
-            ]], columns=features)
-            
-            prob = model.predict_proba(input_data)[0][1] * 100
-            
-            # Mostrar performance do modelo
-            st.metric("Desempenho do Modelo (AUC-ROC)", f"{roc_auc:.2%}")
+        if st.button("Calcular Probabilidade de Falha") and model:
+            input_data = [[accel, strain, torque, wind, hora, dia_num]]
+            prob = model.predict(input_data)[0] * 100
             
             # Visualização
             fig = go.Figure(go.Indicator(
@@ -200,10 +136,9 @@ def show_failure_simulator(model, features, roc_auc):
                 gauge={
                     'axis': {'range': [0, 100]},
                     'steps': [
-                        {'range': [0, 20], 'color': "lightgreen"},
-                        {'range': [20, 50], 'color': "yellow"},
-                        {'range': [50, 80], 'color': "orange"},
-                        {'range': [80, 100], 'color': "red"}
+                        {'range': [0, 30], 'color': "lightgreen"},
+                        {'range': [30, 70], 'color': "orange"},
+                        {'range': [70, 100], 'color': "red"}
                     ],
                     'threshold': {
                         'line': {'color': "black", 'width': 4},
@@ -214,31 +149,23 @@ def show_failure_simulator(model, features, roc_auc):
             ))
             st.plotly_chart(fig, use_container_width=True)
             
-            # Explicação do modelo
-            explain_model(model, features)
-            
             # Recomendações
-            st.subheader("🛠️ Recomendações de Ação")
-            if prob > 80:
-                st.error("**Nível Crítico** - Ação Imediata Necessária")
+            if prob > 70:
+                st.error("⚠️ ALERTA: Alto risco de falha iminente!")
                 st.markdown("""
-                - 🔴 Parada de emergência imediata
-                - 🔧 Inspeção completa dos componentes
-                - 📉 Análise detalhada de vibração
+                - Parar turbina imediatamente
+                - Realizar inspeção completa
+                - Verificar sistema de frenagem
                 """)
-            elif prob > 50:
-                st.warning("**Nível Alto** - Ação Preventiva Recomendada")
+            elif prob > 30:
+                st.warning("⚠️ Atenção: Risco moderado de falha")
                 st.markdown("""
-                - ⚠️ Aumentar frequência de monitoramento
-                - 🔍 Verificar parafusos e fixações
-                - 📅 Agendar manutenção preventiva
+                - Aumentar frequência de monitoramento
+                - Verificar parafusos e fixações
+                - Monitorar temperatura
                 """)
             else:
-                st.success("**Nível Normal** - Operação Regular")
-                st.markdown("""
-                - ✅ Continuar monitoramento rotineiro
-                - 📋 Manter checklist de manutenção
-                """)
+                st.success("✅ Operação dentro dos parâmetros normais")
 
 # --- Página Principal ---
 def main():
@@ -250,14 +177,13 @@ def main():
             return
     
     # Carregar dados
-    df = load_monitoring_data(90)
+    df = load_monitoring_data(60)
     if df.empty:
         st.warning("Nenhum dado encontrado na tabela 'dados'")
         return
     
     # Treinar modelo
-    with st.spinner("Treinando modelo preditivo..."):
-        model, features, roc_auc = train_advanced_model(df)
+    model = train_failure_model(df)
     
     # Layout principal
     col1, col2 = st.columns([3, 1])
@@ -285,31 +211,16 @@ def main():
                 'Falha': 'red'
             }
         )
-        
-        # Destacar falhas
-        falhas = filtered_df[filtered_df['Status'] == 'Falha']
-        if not falhas.empty:
-            fig.add_trace(
-                go.Scatter(
-                    x=falhas['TimeStamp'],
-                    y=falhas['Acelerometro'],
-                    mode='markers',
-                    marker=dict(color='red', size=10),
-                    name='Falha Detectada'
-                )
-            )
-        
         st.plotly_chart(fig, use_container_width=True)
         
-        # Mostrar simulador
+        # Mostrar simulador se o modelo estiver disponível
         if model:
-            show_failure_simulator(model, features, roc_auc)
+            show_failure_simulator(model)
     
     with col2:
         # Estatísticas rápidas
         st.metric("Total de Registros", len(df))
         st.metric("Turbinas Monitoradas", df['Turbina'].nunique())
-        st.metric("Falhas Detectadas", df['Status'].value_counts().get('Falha', 0))
         
         # Distribuição de status
         status_counts = df['Status'].value_counts()
