@@ -56,7 +56,7 @@ def load_monitoring_data(days=30):
             return pd.DataFrame()
             
         query = f"""
-        SELECT * FROM dados_turbinas 
+        SELECT * FROM dados 
         WHERE TimeStamp >= NOW() - INTERVAL {days} DAY
         ORDER BY TimeStamp DESC
         """
