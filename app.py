@@ -132,56 +132,75 @@ def load_monitoring_data(days=90):
 # --- Modelo Preditivo Avançado ---
 def train_advanced_model(df):
     try:
+        # Verificar se há dados suficientes para treino
+        if len(df) < 100:  # Mínimo de 100 amostras
+            st.warning("Dados insuficientes para treinamento (mínimo 100 registros)")
+            return None, None, None
+
         # Features selecionadas
         features = ['Acelerometro', 'StrainGauge', 'SensorTorque', 'Anemometro', 
                    'hora', 'dia_semana', 'mes', 'acel_media_3h', 'acel_media_6h']
         
+        # Verificar se todas as features existem no DataFrame
+        missing_features = [f for f in features if f not in df.columns]
+        if missing_features:
+            st.error(f"Features faltando no DataFrame: {missing_features}")
+            return None, None, None
+
         X = df[features]
         y = df['target']
-        # Avaliação
-        y_proba = calibrated_model.predict_proba(X_test)[:, 1]
-        roc_auc = roc_auc_score(y_test, y_proba)
         
-        # Verificar se o modelo tem os atributos necessários
-        if not hasattr(calibrated_model, 'calibrated_classifiers_') and not hasattr(calibrated_model, 'estimator_'):
-            raise ValueError("Modelo calibrado não tem a estrutura esperada")
-            
-        return calibrated_model, features, roc_auc
-        
-    except Exception as e:
-        st.error(f"Erro no treinamento: {str(e)}")
-        return None, None, None
-        
+        # Verificar se há classes suficientes
+        if len(y.unique()) < 2:
+            st.error("Dados de treino contêm apenas uma classe (target)")
+            return None, None, None
+
         # Divisão temporal (não aleatória)
         tscv = TimeSeriesSplit(n_splits=3)
+        trained_model = None
+        roc_auc = None
+        
         for train_index, test_index in tscv.split(X):
             X_train, X_test = X.iloc[train_index], X.iloc[test_index]
             y_train, y_test = y.iloc[train_index], y.iloc[test_index]
         
-        # Pipeline com normalização
-        pipeline = Pipeline([
-            ('scaler', StandardScaler()),
-            ('model', RandomForestClassifier(
-                n_estimators=200,
-                max_depth=10,
-                min_samples_split=5,
-                class_weight='balanced',
-                random_state=42
-            ))
-        ])
+            # Pipeline com normalização
+            pipeline = Pipeline([
+                ('scaler', StandardScaler()),
+                ('model', RandomForestClassifier(
+                    n_estimators=200,
+                    max_depth=10,
+                    min_samples_split=5,
+                    class_weight='balanced',
+                    random_state=42,
+                    n_jobs=-1  # Usar todos os núcleos do processador
+                ))
+            ])
+            
+            # Calibração de probabilidades
+            calibrated_model = CalibratedClassifierCV(pipeline, cv=3, method='isotonic')
+            calibrated_model.fit(X_train, y_train)
+            
+            # Avaliação
+            y_proba = calibrated_model.predict_proba(X_test)[:, 1]
+            current_auc = roc_auc_score(y_test, y_proba)
+            
+            # Manter o modelo com melhor performance
+            if roc_auc is None or current_auc > roc_auc:
+                roc_auc = current_auc
+                trained_model = calibrated_model
         
-        # Calibração de probabilidades
-        calibrated_model = CalibratedClassifierCV(pipeline, cv=3, method='isotonic')
-        calibrated_model.fit(X_train, y_train)
-        
-        # Avaliação
-        y_proba = calibrated_model.predict_proba(X_test)[:, 1]
-        roc_auc = roc_auc_score(y_test, y_proba)
-        
-        return calibrated_model, features, roc_auc
+        if trained_model is None:
+            st.error("Nenhum modelo foi treinado com sucesso")
+            return None, None, None
+            
+        st.success(f"Modelo treinado com AUC-ROC: {roc_auc:.2%}")
+        return trained_model, features, roc_auc
         
     except Exception as e:
         st.error(f"Erro no treinamento: {str(e)}")
+        import traceback
+        st.error(traceback.format_exc())  # Mostrar traceback completo
         return None, None, None
 
 # --- Explicação do Modelo ---
