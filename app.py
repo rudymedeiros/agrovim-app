@@ -17,42 +17,46 @@ st.set_page_config(
 )
 
 # --- Conexão com Banco de Dados ---
-@st.cache_resource(ttl=3600)  # Reconecta a cada 1 hora
-def get_db_connection(max_retries=3, retry_delay=2):
-    retry_count = 0
-    last_exception = None
+@st.cache_resource(ttl=3600)
+def get_db_connection():
+    """
+    Padronização: Sempre usar esta função para obter conexões
+    """
+    max_retries = 3
+    retry_delay = 2
     
-    while retry_count < max_retries:
+    for attempt in range(max_retries):
         try:
             conn = mysql.connector.connect(
                 host="34.151.221.45",
                 user="agrovim_user",
                 password="Senha2025",
                 database="dados_producao",
-                connection_timeout=5,
-                pool_name="agrovim_pool",
-                pool_size=3
+                connection_timeout=5
             )
             
+            # Teste de conexão real
             if conn.is_connected():
+                cursor = conn.cursor()
+                cursor.execute("SELECT 1")  # Teste simples
+                cursor.close()
                 return conn
                 
         except Error as e:
-            last_exception = e
-            retry_count += 1
-            if retry_count < max_retries:
+            st.warning(f"Tentativa {attempt + 1}/{max_retries} falhou: {str(e)}")
+            if attempt < max_retries - 1:
                 time.sleep(retry_delay)
     
-    st.error(f"Falha na conexão após {max_retries} tentativas. Erro: {str(last_exception)}")
+    st.error("Falha permanente na conexão com o banco de dados")
     return None
 
-# --- Carregar Dados do MySQL ---
+# --- Carregar Dados ---
 @st.cache_data(ttl=300)
 def load_monitoring_data(days=30):
     conn = None
     try:
         conn = get_db_connection()
-        if conn is None:
+        if not conn or not conn.is_connected():
             return pd.DataFrame()
             
         query = f"""
@@ -66,7 +70,7 @@ def load_monitoring_data(days=30):
         return df
         
     except Error as e:
-        st.error(f"Erro na consulta SQL: {str(e)}")
+        st.error(f"Erro na consulta: {str(e)}")
         return pd.DataFrame()
     finally:
         if conn and conn.is_connected():
@@ -74,13 +78,20 @@ def load_monitoring_data(days=30):
 
 # --- Verificação de Conexão ---
 def check_db_connection():
-    test_conn = None
+    conn = None
     try:
-        test_conn = get_db_connection(max_retries=1)
-        return test_conn and test_conn.is_connected()
+        conn = get_db_connection()
+        if conn and conn.is_connected():
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1 FROM dados LIMIT 1")  # Teste com a tabela real
+            cursor.close()
+            return True
+        return False
+    except:
+        return False
     finally:
-        if test_conn and test_conn.is_connected():
-            test_conn.close()
+        if conn and conn.is_connected():
+            conn.close()
 
 # --- Análise de Status ---
 def analyze_status(df):
@@ -91,13 +102,14 @@ def analyze_status(df):
         values=status_counts.values,
         title="Distribuição de Status",
         color=status_counts.index,
-        color_discrete_map={'Normal':'#2ecc71','Alerta':'#f39c12','Falha':'#e74c3c'}
+        color_discrete_map={'Normal':'green','Alerta':'orange','Falha':'red'}
     )
     return fig
 
 # --- Modelo Preditivo ---
 def train_failure_model(df):
     try:
+        # Usando colunas existentes na tabela 'dados'
         X = df[['Acelerometro', 'StrainGauge', 'SensorTorque', 'Anemometro']]
         y = df['Status'].apply(lambda x: 1 if x == 'Falha' else 0)
         
@@ -105,29 +117,29 @@ def train_failure_model(df):
         model.fit(X, y)
         return model
     except Exception as e:
-        st.error(f"Erro no treinamento: {str(e)}")
+        st.error(f"Erro no modelo: {str(e)}")
         return None
 
 # --- Página Principal ---
 def main():
-    st.title("🌪️ Painel de Monitoramento Avançado")
+    st.title("🌪️ Painel de Monitoramento de Turbinas")
     
     # Verificação inicial da conexão
-    if not check_db_connection():
-        st.error("⚠️ Não foi possível estabelecer conexão com o banco de dados. Verifique:")
-        st.markdown("""
-        - Credenciais de acesso
-        - Endereço do servidor MySQL (34.151.221.45)
-        - Regras de firewall na nuvem
-        - Status do serviço MySQL
-        """)
-        return
+    with st.spinner("Verificando conexão com o banco de dados..."):
+        if not check_db_connection():
+            st.error("""
+            ⚠️ Falha na conexão com o banco. Verifique:
+            1. Servidor MySQL em 34.151.221.45
+            2. Usuário: agrovim_user
+            3. Tabela: 'dados'
+            """)
+            return
     
     # Carregar dados
     df = load_monitoring_data(60)
     
     if df.empty:
-        st.warning("Nenhum dado encontrado no banco de dados!")
+        st.warning("Nenhum dado encontrado na tabela 'dados'")
         return
 
     # Sidebar - Filtros
@@ -160,7 +172,7 @@ def main():
             (df['TimeStamp'].dt.date >= date_range[0]) & 
             (df['TimeStamp'].dt.date <= date_range[1]) & 
             (df['Turbina'].isin(selected_turbines)) & 
-            (df['Status'].isin(selected_status)))
+            (df['Status'].isin(selected_status))
         filtered_df = df.loc[mask]
     else:
         filtered_df = df
@@ -173,8 +185,8 @@ def main():
     with col2:
         st.metric("Registros", len(filtered_df))
     with col3:
-        st.metric("Taxa de Falhas", 
-                 f"{len(filtered_df[filtered_df['Status'] == 'Falha']) / len(filtered_df):.2%}")
+        failure_rate = len(filtered_df[filtered_df['Status'] == 'Falha']) / len(filtered_df) if len(filtered_df) > 0 else 0
+        st.metric("Taxa de Falhas", f"{failure_rate:.2%}")
     with col4:
         last_update = filtered_df['TimeStamp'].max().strftime("%d/%m/%Y %H:%M")
         st.metric("Última Atualização", last_update)
