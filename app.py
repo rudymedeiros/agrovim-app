@@ -2,7 +2,13 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import mysql.connector
+
 from datetime import datetime
+
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
+import joblib
+import numpy as np
 
 # Configuração da página
 st.set_page_config(
@@ -25,6 +31,43 @@ def connect_db():
         st.error(f"Erro de conexão: {str(e)}")
         return None
 
+# Função para carregar dados de produção (adicione esta função)
+@st.cache_data(ttl=300)
+def load_production_data(days=30):
+    conn = get_db_connection()
+    if conn:
+        query = f"""
+        SELECT data_hora, producao, temperatura, pressao 
+        FROM producao 
+        WHERE data_hora >= NOW() - INTERVAL {days} DAY
+        ORDER BY data_hora
+        """
+        df = pd.read_sql(query, conn)
+        conn.close()
+        return df
+    return pd.DataFrame()
+
+# Função para treinar modelo de previsão
+def train_prediction_model(df):
+    try:
+        # Pré-processamento
+        df['data_hora'] = pd.to_datetime(df['data_hora'])
+        df['hora'] = df['data_hora'].dt.hour
+        df['dia_semana'] = df['data_hora'].dt.dayofweek
+        
+        # Features e target
+        X = df[['temperatura', 'pressao', 'hora', 'dia_semana']]
+        y = df['producao']
+        
+        # Treinamento
+        model = RandomForestRegressor(n_estimators=100, random_state=42)
+        model.fit(X, y)
+        return model
+    except Exception as e:
+        st.error(f"Erro no treinamento: {str(e)}")
+        return None
+
+
 # Carregar dados
 def load_data():
     conn = connect_db()
@@ -44,7 +87,7 @@ def load_data():
 
 def main():
     st.title("🌪️ Dashboard de Monitoramento de Turbinas")
-    
+    show_prediction_section()
     # Carregar dados
     df = load_data()
     
@@ -103,6 +146,60 @@ def main():
         st.metric("Status Predominante", status_counts.idxmax())
     
     # Gráficos
+# Seção de Previsão (adicione esta nova seção no seu layout)
+def show_prediction_section():
+    st.header("🔮 Previsão de Produção")
+    
+    # Carregar dados
+    df = load_production_data(60)
+    if df.empty:
+        st.warning("Dados insuficientes para previsão.")
+        return
+    
+    # Treinar modelo (ou carregar)
+    model = train_prediction_model(df)
+    if not model:
+        return
+    
+    # Interface de previsão
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        temperatura = st.number_input("Temperatura (°C)", value=25.0)
+    with col2:
+        pressao = st.number_input("Pressão (hPa)", value=1013.0)
+    with col3:
+        horas_futuro = st.slider("Horas à frente", 1, 24, 6)
+    
+    if st.button("Prever Produção"):
+        # Preparar dados futuros
+        hora_atual = datetime.now().hour
+        dia_semana = datetime.now().weekday()
+        
+        # Gerar previsões para cada hora
+        horas = range(hora_atual, hora_atual + horas_futuro)
+        previsoes = []
+        for h in horas:
+            h = h % 24
+            input_data = [[temperatura, pressao, h, dia_semana]]
+            previsao = model.predict(input_data)[0]
+            previsoes.append(previsao)
+        
+        # Criar gráfico
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=list(range(horas_futuro)),
+            y=previsoes,
+            name="Previsão",
+            line=dict(color='red', width=2)
+        )
+        fig.update_layout(
+            title=f"Previsão para as próximas {horas_futuro} horas",
+            xaxis_title="Horas",
+            yaxis_title="Produção (unidades)"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    
     st.subheader("Análise de Dados")
     
     if not filtered_df.empty:
