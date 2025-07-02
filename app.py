@@ -163,7 +163,7 @@ def main():
             (df['TimeStamp'].dt.date >= date_range[0]) & 
             (df['TimeStamp'].dt.date <= date_range[1]) & 
             (df['Turbina'].isin(turbines)) & 
-            (df['Status'].isin(statuses))
+            (df['Status'].isin(statuses)))
         filtered_df = df.loc[mask]
     else:
         filtered_df = df
