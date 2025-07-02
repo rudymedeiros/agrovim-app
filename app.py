@@ -139,8 +139,11 @@ def train_advanced_model(df):
 # --- Explicação do Modelo sem SHAP ---
 def explain_model(model, features):
     try:
-        if hasattr(model.named_steps['model'], 'feature_importances_'):
-            importances = model.named_steps['model'].feature_importances_
+        # Acessar o modelo base dentro do CalibratedClassifierCV
+        base_model = model.base_estimator.named_steps['model']
+        
+        if hasattr(base_model, 'feature_importances_'):
+            importances = base_model.feature_importances_
             importance_df = pd.DataFrame({
                 'Feature': features,
                 'Importance': importances
@@ -159,7 +162,6 @@ def explain_model(model, features):
             st.warning("O modelo não fornece importância de características.")
     except Exception as e:
         st.warning(f"Não foi possível explicar o modelo: {str(e)}")
-
 # --- Simulador de Falhas ---
 def show_failure_simulator(model, features, roc_auc):
     st.header("🔮 Simulador de Risco de Falhas")
