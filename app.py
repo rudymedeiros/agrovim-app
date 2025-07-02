@@ -138,6 +138,19 @@ def train_advanced_model(df):
         
         X = df[features]
         y = df['target']
+        # Avaliação
+        y_proba = calibrated_model.predict_proba(X_test)[:, 1]
+        roc_auc = roc_auc_score(y_test, y_proba)
+        
+        # Verificar se o modelo tem os atributos necessários
+        if not hasattr(calibrated_model, 'calibrated_classifiers_') and not hasattr(calibrated_model, 'estimator_'):
+            raise ValueError("Modelo calibrado não tem a estrutura esperada")
+            
+        return calibrated_model, features, roc_auc
+        
+    except Exception as e:
+        st.error(f"Erro no treinamento: {str(e)}")
+        return None, None, None
         
         # Divisão temporal (não aleatória)
         tscv = TimeSeriesSplit(n_splits=3)
@@ -174,8 +187,18 @@ def train_advanced_model(df):
 # --- Explicação do Modelo ---
 def explain_model(model, features):
     try:
-        # Acessar o modelo base dentro do pipeline
-        rf_model = model.base_estimator.named_steps['model']
+        # Acessar o modelo base dentro do pipeline calibrado
+        if hasattr(model, 'calibrated_classifiers_'):
+            # Para CalibratedClassifierCV com múltiplos classificadores
+            pipeline = model.calibrated_classifiers_[0].estimator
+        elif hasattr(model, 'estimator_'):
+            # Para versões mais novas do scikit-learn
+            pipeline = model.estimator_
+        else:
+            pipeline = model.base_estimator
+        
+        # Agora acessamos o RandomForest dentro do pipeline
+        rf_model = pipeline.named_steps['model']
         
         if hasattr(rf_model, 'feature_importances_'):
             importances = rf_model.feature_importances_
@@ -205,7 +228,6 @@ def explain_model(model, features):
             """)
     except Exception as e:
         st.warning(f"Não foi possível explicar o modelo: {str(e)}")
-
 # --- Simulador de Falhas Inteligente ---
 def show_ai_simulator(model, features, roc_auc):
     st.header("🤖 Simulador Preditivo de Falhas")
