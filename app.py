@@ -158,20 +158,26 @@ def train_advanced_model(df):
 # --- Explicação do Modelo com SHAP ---
 def explain_model(model, features, sample_data):
     try:
-        # Extrair o modelo final do pipeline calibrado
-        rf_model = model.named_steps['model']
-        
-        # Calcular valores SHAP
-        explainer = shap.TreeExplainer(rf_model)
-        shap_values = explainer.shap_values(sample_data[features])
-        
-        # Plot
-        fig, ax = plt.subplots()
-        shap.summary_plot(shap_values[1], sample_data[features], plot_type="bar", show=False)
-        st.pyplot(fig)
-        
+        if hasattr(model.named_steps['model'], 'feature_importances_'):
+            importances = model.named_steps['model'].feature_importances_
+            feat_imp = pd.DataFrame({
+                'Feature': features,
+                'Importance': importances
+            }).sort_values('Importance', ascending=False)
+            
+            st.subheader("📊 Fatores Mais Influentes")
+            fig = px.bar(
+                feat_imp,
+                x='Importance',
+                y='Feature',
+                orientation='h',
+                title='Importância das Variáveis'
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.warning("O modelo não fornece importância de características.")
     except Exception as e:
-        st.warning(f"Não foi possível gerar explicação do modelo: {str(e)}")
+        st.warning(f"Não foi possível gerar explicação: {str(e)}")
 
 # --- Simulador de Falhas Avançado ---
 def show_advanced_simulator(model, features, roc_auc):
