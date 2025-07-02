@@ -191,7 +191,7 @@ def show_prediction_section():
             y=previsoes,
             name="Previsão",
             line=dict(color='red', width=2)
-        )
+        ))
         fig.update_layout(
             title=f"Previsão para as próximas {horas_futuro} horas",
             xaxis_title="Horas",
