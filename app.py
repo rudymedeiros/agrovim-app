@@ -253,7 +253,7 @@ def show_last_reading_prediction(df, selected_turbine, model, features, roc_auc)
     if model is None:
         return
         
-       try:
+    try:
         # Garantir que os dados estão ordenados do mais recente para o mais antigo
         turbina_data = df[df['Turbina'] == selected_turbine].sort_values('TimeStamp', ascending=False)
         
