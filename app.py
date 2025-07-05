@@ -506,6 +506,9 @@ def main():
             options=df['Turbina'].unique(),
             key='turbine_select'
         )
+        if model:
+            show_last_reading_prediction(df, selected_turbine, model, features, roc_auc)
+            st.markdown("---")  # Linha divisória
         
         # Dashboard completo
         show_complete_dashboard(df, selected_turbine)
