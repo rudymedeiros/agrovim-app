@@ -252,9 +252,16 @@ def explain_model(model, features):
 def show_last_reading_prediction(df, selected_turbine, model, features, roc_auc):
     if model is None:
         return
-    
+        
+       try:
+        # Garantir que os dados estão ordenados do mais recente para o mais antigo
+        turbina_data = df[df['Turbina'] == selected_turbine].sort_values('TimeStamp', ascending=False)
+        
+        if turbina_data.empty:
+            st.warning(f"Nenhum dado disponível para a turbina {selected_turbine}")
+            return
     # Filtra os dados da turbina selecionada e pega a última leitura
-    last_reading = df[df['Turbina'] == selected_turbine].iloc[-1]
+    last_reading = turbina_data.iloc[0].copy()
     
     # Prepara os dados para predição
     input_last_data = pd.DataFrame([[
