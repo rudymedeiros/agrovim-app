@@ -311,11 +311,23 @@ def show_last_reading_prediction(df, selected_turbine, model, features, roc_auc)
         # Recomendações (similar ao simulador)
         st.subheader("📋 Recomendações")
         if prob_last > 80:
-            st.markdown('<div class="alert-high">🔴 <strong>ALERTA CRÍTICO</strong></div>', unsafe_allow_html=True)
+            st.markdown('<div class="alert-high">🔴 <strong>ALERTA CRÍTICO</strong><br>'
+                           'Probabilidade de falha muito alta. Ações recomendadas:<br>'
+                           '- Parada imediata da turbina<br>'
+                           '- Inspeção completa de todos os componentes<br>'
+                           '- Contatar equipe de manutenção urgente</div>', 
+                           unsafe_allow_html=True)
         elif prob_last > 50:
-            st.markdown('<div class="alert-medium">🟠 <strong>ALERTA MODERADO</strong></div>', unsafe_allow_html=True)
+             st.markdown('<div class="alert-medium">🟠 <strong>ALERTA MODERADO</strong><br>'
+                           'Risco elevado de falha. Ações recomendadas:<br>'
+                           '- Aumentar frequência de monitoramento<br>'
+                           '- Verificar sistema de frenagem<br>'
+                           '- Agendar manutenção preventiva nas próximas 48h</div>', 
+                           unsafe_allow_html=True)
         else:
-            st.success("🟢 **STATUS NORMAL**")
+            st.success("🟢 **STATUS NORMAL**\n\n"
+                         "Operação dentro dos parâmetros esperados. "
+                         "Manter monitoramento regular.")
             
 # --- Simulador de Falhas Inteligente ---
 def show_ai_simulator(model, features, roc_auc):
