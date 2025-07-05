@@ -301,7 +301,7 @@ def show_last_reading_prediction(df, selected_turbine, model, features, roc_auc)
                     'threshold': {
                         'line': {'color': "black", 'width': 4},
                         'thickness': 0.75,
-                        'value': prob
+                        'value': prob_last
                     }
                 }
             ))
