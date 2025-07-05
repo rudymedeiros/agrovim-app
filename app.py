@@ -253,70 +253,78 @@ def show_last_reading_prediction(df, selected_turbine, model, features, roc_auc)
     if model is None:
         return
     
-    # Filtra os dados da turbina selecionada e pega a última leitura
-    last_reading = df[df['Turbina'] == selected_turbine].iloc[-1]
-    
-    # Prepara os dados para predição
-    input_last_data = pd.DataFrame([[
-        last_reading['Acelerometro'],
-        last_reading['StrainGauge'],
-        last_reading['SensorTorque'],
-        last_reading['Anemometro'],
-        last_reading['hora'],
-        last_reading['dia_semana'],
-        last_reading['mes'],
-        last_reading['acel_media_3h'],
-        last_reading['acel_media_6h']
-    ]], columns=features)
-
-# Calcula a probabilidade de falha
-    prob_last = model.predict_proba(input_last_data)[0][1] * 100
-
-# Cria o container para a previsão
-    with st.container():
-        st.markdown('<div class="header-style">🔍 Previsão Automática (Última Leitura)</div>', unsafe_allow_html=True)
+    try:
+        # Filtra os dados da turbina selecionada e pega a última leitura
+        turbina_data = df[df['Turbina'] == selected_turbine]
+        if turbina_data.empty:
+            st.warning(f"Nenhum dado disponível para a turbina {selected_turbine}")
+            return
+            
+        last_reading = turbina_data.iloc[-1].copy()
         
-        cols = st.columns([1, 2])
-        with cols[0]:
-            # Exibe métricas básicas
-            st.metric("Turbina", selected_turbine)
-            st.metric("Horário", last_reading['TimeStamp'].strftime('%d/%m/%Y %H:%M'))
-            st.metric("Status Atual", last_reading['Status'])
+        # Prepara os dados para predição
+        input_data = pd.DataFrame([[
+            last_reading['Acelerometro'],
+            last_reading['StrainGauge'],
+            last_reading['SensorTorque'],
+            last_reading['Anemometro'],
+            last_reading['hora'],
+            last_reading['dia_semana'],
+            last_reading['mes'],
+            last_reading['acel_media_3h'],
+            last_reading['acel_media_6h']
+        ]], columns=features)
         
-        with cols[1]:
-            # Gauge de probabilidade
-            fig = go.Figure(go.Indicator(
-                mode="gauge+number",
-                value=prob,
-                domain={'x': [0, 1], 'y': [0, 1]},
-                title={'text': "Probabilidade de Falha"},
-                gauge={
-                    'axis': {'range': [0, 100]},
-                    'steps': [
-                        {'range': [0, 20], 'color': "lightgreen"},
-                        {'range': [20, 50], 'color': "yellow"},
-                        {'range': [50, 80], 'color': "orange"},
-                        {'range': [80, 100], 'color': "red"}
-                    ],
-                    'threshold': {
-                        'line': {'color': "black", 'width': 4},
-                        'thickness': 0.75,
-                        'value': prob
+        # Calcula a probabilidade de falha
+        prob_falha = model.predict_proba(input_data)[0][1] * 100
+
+        # Cria o container para a previsão
+        with st.container():
+            st.markdown('<div class="header-style">🔍 Previsão Automática (Última Leitura)</div>', unsafe_allow_html=True)
+            
+            cols = st.columns([1, 2])
+            with cols[0]:
+                # Exibe métricas básicas
+                st.metric("Turbina", selected_turbine)
+                st.metric("Horário", last_reading['TimeStamp'].strftime('%d/%m/%Y %H:%M'))
+                st.metric("Status Atual", last_reading['Status'])
+            
+            with cols[1]:
+                # Gauge de probabilidade
+                fig = go.Figure(go.Indicator(
+                    mode="gauge+number",
+                    value=prob_falha,
+                    domain={'x': [0, 1], 'y': [0, 1]},
+                    title={'text': "Probabilidade de Falha"},
+                    gauge={
+                        'axis': {'range': [0, 100]},
+                        'steps': [
+                            {'range': [0, 20], 'color': "lightgreen"},
+                            {'range': [20, 50], 'color': "yellow"},
+                            {'range': [50, 80], 'color': "orange"},
+                            {'range': [80, 100], 'color': "red"}
+                        ],
+                        'threshold': {
+                            'line': {'color': "black", 'width': 4},
+                            'thickness': 0.75,
+                            'value': prob_falha
+                        }
                     }
-                }
-            ))
-            fig.update_layout(height=250)
-            st.plotly_chart(fig, use_container_width=True)
-        
-        # Recomendações (similar ao simulador)
-        st.subheader("📋 Recomendações")
-        if prob > 80:
-            st.markdown('<div class="alert-high">🔴 <strong>ALERTA CRÍTICO</strong></div>', unsafe_allow_html=True)
-        elif prob > 50:
-            st.markdown('<div class="alert-medium">🟠 <strong>ALERTA MODERADO</strong></div>', unsafe_allow_html=True)
-        else:
-            st.success("🟢 **STATUS NORMAL**")
-
+                ))
+                fig.update_layout(height=250)
+                st.plotly_chart(fig, use_container_width=True)
+            
+            # Recomendações
+            st.subheader("📋 Recomendações")
+            if prob_falha > 80:
+                st.markdown('<div class="alert-high">🔴 <strong>ALERTA CRÍTICO</strong></div>', unsafe_allow_html=True)
+            elif prob_falha > 50:
+                st.markdown('<div class="alert-medium">🟠 <strong>ALERTA MODERADO</strong></div>', unsafe_allow_html=True)
+            else:
+                st.success("🟢 **STATUS NORMAL**")
+                
+    except Exception as e:
+        st.error(f"Erro ao gerar previsão automática: {str(e)}")
 
 # --- Simulador de Falhas Inteligente ---
 def show_ai_simulator(model, features, roc_auc):
@@ -498,27 +506,28 @@ def main():
         model, features, roc_auc = train_advanced_model(df)
     
     # Layout principal
-    col1, col2 = st.columns([3, 1])
+col1, col2 = st.columns([3, 1])
+
+with col1:
+    # Filtros
+    selected_turbine = st.selectbox(
+        "Selecione a Turbina",
+        options=df['Turbina'].unique(),
+        key='turbine_select_main'
+    )
     
-    with col1:
-        # Filtros
-        selected_turbine = st.selectbox(
-            "Selecione a Turbina",
-            options=df['Turbina'].unique(),
-            key='turbine_select'
-        )
-        
-         if model:
-            show_last_reading_prediction(df, selected_turbine, model, features, roc_auc)
-            st.markdown("---")  # Linha divisória
-             
-        # Dashboard completo
-        show_complete_dashboard(df, selected_turbine)
-        
-        # Simulador de IA
-        if model:
-            show_ai_simulator(model, features, roc_auc)
+    # Previsão automática
+    if model:
+        show_last_reading_prediction(df, selected_turbine, model, features, roc_auc)
+        st.markdown("---")  # Linha divisória
+     
+    # Dashboard completo
+    show_complete_dashboard(df, selected_turbine)
     
+    # Simulador de IA
+    if model:
+        show_ai_simulator(model, features, roc_auc)
+        
     with col2:
         # Visão geral
         st.markdown('<div class="header-style">🔍 Visão Geral</div>', unsafe_allow_html=True)
