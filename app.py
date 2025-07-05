@@ -270,7 +270,7 @@ def show_last_reading_prediction(df, selected_turbine, model, features, roc_auc)
     ]], columns=features)
     
     # Calcula a probabilidade de falha
-    prob_last = model.predict_proba(input_data)[0][1] * 100
+    prob_last = model.predict_proba(input_last_data)[0][1] * 100
     
     # Cria o container para a previsão
     with st.container():
