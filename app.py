@@ -249,6 +249,7 @@ def explain_model(model, features):
         st.warning(f"Não foi possível explicar o modelo: {str(e)}")
 
 # --- Previsão Automática Baseada na Última Leitura ---
+# --- Previsão Automática Baseada na Última Leitura ---
 def show_last_reading_prediction(df, selected_turbine, model, features, roc_auc):
     if model is None:
         return
@@ -260,82 +261,87 @@ def show_last_reading_prediction(df, selected_turbine, model, features, roc_auc)
         if turbina_data.empty:
             st.warning(f"Nenhum dado disponível para a turbina {selected_turbine}")
             return
-    # Filtra os dados da turbina selecionada e pega a última leitura
-    last_reading = turbina_data.iloc[0].copy()
-    
-    # Prepara os dados para predição
-    input_last_data = pd.DataFrame([[
-        last_reading['Acelerometro'],
-        last_reading['StrainGauge'],
-        last_reading['SensorTorque'],
-        last_reading['Anemometro'],
-        last_reading['hora'],
-        last_reading['dia_semana'],
-        last_reading['mes'],
-        last_reading['acel_media_3h'],
-        last_reading['acel_media_6h']
-    ]], columns=features)
-    
-    # Calcula a probabilidade de falha
-    prob_last = model.predict_proba(input_last_data)[0][1] * 100
-    
-    # Cria o container para a previsão
-    with st.container():
-        st.markdown('<div class="header-style">🔍 Previsão Automática (Última Leitura)</div>', unsafe_allow_html=True)
-        
-        cols = st.columns([1, 2])
-        with cols[0]:
-            # Exibe métricas básicas
-            st.metric("Turbina", selected_turbine)
-            st.metric("Horário", last_reading['TimeStamp'].strftime('%d/%m/%Y %H:%M'))
-            st.metric("Status Atual", last_reading['Status'])
-        
-        with cols[1]:
-            # Gauge de probabilidade
-            fig = go.Figure(go.Indicator(
-                mode="gauge+number",
-                value=prob_last,
-                domain={'x': [0, 1], 'y': [0, 1]},
-                title={'text': "Probabilidade de Falha"},
-                gauge={
-                    'axis': {'range': [0, 100]},
-                    'steps': [
-                        {'range': [0, 20], 'color': "lightgreen"},
-                        {'range': [20, 50], 'color': "yellow"},
-                        {'range': [50, 80], 'color': "orange"},
-                        {'range': [80, 100], 'color': "red"}
-                    ],
-                    'threshold': {
-                        'line': {'color': "black", 'width': 4},
-                        'thickness': 0.75,
-                        'value': prob_last
-                    }
-                }
-            ))
-            fig.update_layout(height=250)
-            st.plotly_chart(fig, use_container_width=True)
-        
-        # Recomendações (similar ao simulador)
-        st.subheader("📋 Recomendações")
-        if prob_last > 80:
-            st.markdown('<div class="alert-high">🔴 <strong>ALERTA CRÍTICO</strong><br>'
-                           'Probabilidade de falha muito alta. Ações recomendadas:<br>'
-                           '- Parada imediata da turbina<br>'
-                           '- Inspeção completa de todos os componentes<br>'
-                           '- Contatar equipe de manutenção urgente</div>', 
-                           unsafe_allow_html=True)
-        elif prob_last > 50:
-             st.markdown('<div class="alert-medium">🟠 <strong>ALERTA MODERADO</strong><br>'
-                           'Risco elevado de falha. Ações recomendadas:<br>'
-                           '- Aumentar frequência de monitoramento<br>'
-                           '- Verificar sistema de frenagem<br>'
-                           '- Agendar manutenção preventiva nas próximas 48h</div>', 
-                           unsafe_allow_html=True)
-        else:
-            st.success("🟢 **STATUS NORMAL**\n\n"
-                         "Operação dentro dos parâmetros esperados. "
-                         "Manter monitoramento regular.")
             
+        # Filtra os dados da turbina selecionada e pega a última leitura
+        last_reading = turbina_data.iloc[0].copy()
+        
+        # Prepara os dados para predição
+        input_last_data = pd.DataFrame([[
+            last_reading['Acelerometro'],
+            last_reading['StrainGauge'],
+            last_reading['SensorTorque'],
+            last_reading['Anemometro'],
+            last_reading['hora'],
+            last_reading['dia_semana'],
+            last_reading['mes'],
+            last_reading['acel_media_3h'],
+            last_reading['acel_media_6h']
+        ]], columns=features)
+        
+        # Calcula a probabilidade de falha
+        prob_last = model.predict_proba(input_last_data)[0][1] * 100
+        
+        # Cria o container para a previsão
+        with st.container():
+            st.markdown('<div class="header-style">🔍 Previsão Automática (Última Leitura)</div>', unsafe_allow_html=True)
+            
+            cols = st.columns([1, 2])
+            with cols[0]:
+                # Exibe métricas básicas
+                st.metric("Turbina", selected_turbine)
+                st.metric("Horário", last_reading['TimeStamp'].strftime('%d/%m/%Y %H:%M'))
+                st.metric("Status Atual", last_reading['Status'])
+            
+            with cols[1]:
+                # Gauge de probabilidade
+                fig = go.Figure(go.Indicator(
+                    mode="gauge+number",
+                    value=prob_last,
+                    domain={'x': [0, 1], 'y': [0, 1]},
+                    title={'text': "Probabilidade de Falha"},
+                    gauge={
+                        'axis': {'range': [0, 100]},
+                        'steps': [
+                            {'range': [0, 20], 'color': "lightgreen"},
+                            {'range': [20, 50], 'color': "yellow"},
+                            {'range': [50, 80], 'color': "orange"},
+                            {'range': [80, 100], 'color': "red"}
+                        ],
+                        'threshold': {
+                            'line': {'color': "black", 'width': 4},
+                            'thickness': 0.75,
+                            'value': prob_last
+                        }
+                    }
+                ))
+                fig.update_layout(height=250)
+                st.plotly_chart(fig, use_container_width=True)
+            
+            # Recomendações (similar ao simulador)
+            st.subheader("📋 Recomendações")
+            if prob_last > 80:
+                st.markdown('<div class="alert-high">🔴 <strong>ALERTA CRÍTICO</strong><br>'
+                               'Probabilidade de falha muito alta. Ações recomendadas:<br>'
+                               '- Parada imediata da turbina<br>'
+                               '- Inspeção completa de todos os componentes<br>'
+                               '- Contatar equipe de manutenção urgente</div>', 
+                               unsafe_allow_html=True)
+            elif prob_last > 50:
+                st.markdown('<div class="alert-medium">🟠 <strong>ALERTA MODERADO</strong><br>'
+                               'Risco elevado de falha. Ações recomendadas:<br>'
+                               '- Aumentar frequência de monitoramento<br>'
+                               '- Verificar sistema de frenagem<br>'
+                               '- Agendar manutenção preventiva nas próximas 48h</div>', 
+                               unsafe_allow_html=True)
+            else:
+                st.success("🟢 **STATUS NORMAL**\n\n"
+                             "Operação dentro dos parâmetros esperados. "
+                             "Manter monitoramento regular.")
+    
+    except Exception as e:
+        st.error(f"Erro ao fazer previsão: {str(e)}")
+        import traceback
+        st.error(traceback.format_exc())            
 # --- Simulador de Falhas Inteligente ---
 def show_ai_simulator(model, features, roc_auc):
     st.header("🤖 Simulador Preditivo de Falhas")
